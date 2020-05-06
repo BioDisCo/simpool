@@ -5,53 +5,52 @@ from matplotlib import collections as mc
 
 import config
 
-from Infections.Agent import State
+from Infections.Agent import Symptoms, Agent
 from Infections.Hospital import SingleWard
 
 
 class InfectionExecution(object):
-    def __init__(self, N):
+    def __init__(self):
         self.infections = {'internal': [],
                            'external': []}
-        self.symptomatic = []
         self.contacted = dict()
         self.hospital = SingleWard()
+        self.agents = {i: Agent(i, self) for i in config.person_ids}
 
-    def add_ext(self, t, id1):
+        init_states = {}
+        for i in config.person_ids:
+            init_states[i] = self.agents[i].state
+        self.states : list = [init_states]
+
+        self.t : int = 0
+
+    def log_external_infection(self, t, id1):
         self.infections['external'] += [(t, id1)]
 
-    def add_inf(self, t1, t2, id1, id2):
+    def log_internal_infection(self, t1, t2, id1, id2):
         self.infections['internal'] += [(t1, t2, id1, id2)]
 
-    def add_symptomatic(self, t, id1):
-        assert ((t, id1, True) not in self.symptomatic)
-        self.symptomatic += [(t, id1, True)]
-
-    def remove_symptomatic(self, t, id1):
-        assert ((t, id1, False) not in self.symptomatic)
-        self.symptomatic += [(t, id1, False)]
-
-    def get_symptomatic(self, t):
+    """
+    def get_symptomatic(self, t, symptoms):
         sym_leq_t = set([sym[1]
                          for sym in self.symptomatic if sym[0] <= t and sym[2]])
         healed_leq_t = set(
             [sym[1] for sym in self.symptomatic if sym[0] <= t and not sym[2]])
         return list(sym_leq_t - healed_leq_t)
+    """
 
-    def add_contacted(self, t, agent, contact_ids):
-        # print(f'add_contacted({t}, id {agent.id}, {contact_ids})')
-        i = agent.id
-        if i in self.contacted.keys():
-            self.contacted[i] += [(t, contact_ids)]
+    def log_contacts(self, t, agent_id, contact_ids):
+        if agent_id in self.contacted.keys():
+            self.contacted[agent_id] += [(t, contact_ids)]
         else:
-            self.contacted[i] = [(t, contact_ids)]
+            self.contacted[agent_id] = [(t, contact_ids)]
 
-    def get_contacts_attime(self, myid, t):
+    def get_contacts_attime(self, agent_id, t):
         cs = []
-        if myid in self.contacted.keys():
-            # get those after at time t
+        if agent_id in self.contacted.keys():
+            # get those at time t
             graphs = list(filter(lambda c: c[0] == t,
-                                 self.contacted[myid]))
+                                 self.contacted[agent_id]))
             # print(graphs)
             assert (len(graphs) <= 1)
             for t, contact_ids in graphs:
@@ -60,8 +59,8 @@ class InfectionExecution(object):
 
     def get_contactgraph_attime(self, t):
         graph = {}
-        for i in range(config.N):
-            graph[i] = self.get_contacts_attime(myid=i, t=t)
+        for i in config.person_ids:
+            graph[i] = self.get_contacts_attime(agent_id=i, t=t)
         return graph
 
     def get_contacts_fromtime(self, myid, t_from):
@@ -71,9 +70,30 @@ class InfectionExecution(object):
             graphs = list(filter(lambda c: c[0] >= t_from,
                                  self.contacted[myid]))
             # print(graphs)
-            for t, contact_ids in graphs:
+            for _, contact_ids in graphs:
                 cs += contact_ids
         return cs
+
+    def get_nb_working(self, t):
+        return len([i for i, state in self.states[t].items() if state['working']])
+
+    def get_nb_quarantined(self, t):
+        return len([i for i, state in self.states[t].items() if state['quarantined']])
+
+    def get_nb_working_spreading(self, t):
+        return len([i for i, state in self.states[t].items() if state['working'] and state['spreading']])
+
+    def get_nb_dead(self, t):
+        return len([i for i, state in self.states[t].items() if state['dead']])
+
+    def get_nb_sick_leave(self, t):
+        return len([i for i, state in self.states[t].items() if state['sick_leave']])
+
+    def get_nb_infected(self, t):
+        return len([i for i, state in self.states[t].items() if state['infected']])
+
+    def get_nb_working_immune(self, t):
+        return len([i for i, state in self.states[t].items() if state['working'] and state['infected']])
 
     def plot(self, myax, cmap='Blues', alpha=0.2):
         lines = []
@@ -105,8 +125,12 @@ class InfectionExecution(object):
         return infected_nums
 
     def get_serial_intervals(self):
+        #TODO: adapt to new implementation
+        return []
+
         # from onset of symptoms to onset of symptoms along causal chains
         # at the moment only for severe cases - not mild symptomatic cases
+        """
         serial_intervals = []
 
         for inf in self.infections['internal']:
@@ -121,8 +145,9 @@ class InfectionExecution(object):
                                      [0] - source_symptomatic_onset[0][0]]
 
         return serial_intervals
+        """
 
-    def plotparam(self, myax, param, alpha=0.1):
+    def plotparam(self, myax, param: str, alpha=0.1):
         if param == 'R':
             infected_nums = self.get_infections_per_infected()
             myax.hist(x=infected_nums, bins=list(range(10)),
@@ -136,39 +161,44 @@ class InfectionExecution(object):
         else:
             assert(False)
 
-    def next_state(self, t, myid, state):
-        s = state[myid]
-        # today contacted
-        if s.quarantined:
-            # no (internal) contacts in quarantine
-            # can still be infected externally in quarantine
-            today_contacts = []
-        else:
-            # today working
-            workforce = list(
-                filter(lambda p: state[p].works(), config.person_ids))
-            self.hospital.define_working(t, workforce)
-            today_contacts = self.hospital.get_contacts(t, myid)
-            # today_contacts = random.sample(workforce, min(
-            #     len(workforce), config.contacts_perday))
-        # log contacts
-        self.add_contacted(t=t, agent=s, contact_ids=today_contacts)
+    def tick(self):
+        self.t += 1
+        new_states = {}
+        for i in config.person_ids:
+            new_states[i] = self.agents[i].state
+        self.states += [new_states]
 
-        # schedule a day
-        s.tick(t)
+        for i, agent in self.agents.items():
+            # get agents contacted today
+            if agent.quarantined:
+                # no (internal) contacts in quarantine
+                # can still be infected externally in quarantine
+                today_contacts = []
+            else:
+                # is working today
+                workforce = list(
+                    filter(lambda p: self.agents[p].working, config.person_ids))
+                self.hospital.define_working(self.t, workforce)
+                today_contacts = self.hospital.get_contacts(self.t, i)
 
-        # update who got infected
-        if s.state is State.UNINFECTED:
-            # get externally infected
-            u = random.random()
-            if u < config.pext:
-                self.add_ext(t=t, id1=myid)
-                s.infect(None, t)
+            # log contacts
+            self.log_contacts(t=self.t, agent_id=i, contact_ids=today_contacts)
 
-            # get internally infected
-            for so in today_contacts:
-                if state[so].state is State.INFECTED_SPREADING:
-                    u = random.random()
-                    if u < config.pint:
-                        self.add_inf(state[so].time_infected, t, so, myid)
-                        s.infect(state[so].id, t)
+            # schedule a day
+            agent.tick()
+
+            # update who got infected
+            if not agent.infected:
+                # get externally infected
+                u = random.random()
+                if u < config.pext:
+                    self.log_external_infection(t=self.t, id1=i)
+                    agent.infect(None, self.t)
+
+                # get internally infected
+                for so in today_contacts:
+                    if self.agents[so].spreading:
+                        u = random.random()
+                        if u < config.pint:
+                            self.log_internal_infection(self.agents[so].time_infected, self.t, so, i)
+                            agent.infect(self.agents[so].id, self.t)

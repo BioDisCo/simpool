@@ -1,30 +1,25 @@
+#!/usr/bin/env python3
+
+import matplotlib.pyplot as plt
+
 import simple
 import config
+import numpy as np
 
 # tests to compare:
 mytests = {}
 mytests[0] = {
-    'type': 'TestAll',
-    'parameters': {}
-}
-mytests[1] = {
+    'short': 'No test',
     'type': 'TestJustLook',
     'parameters': {}
 }
-mytests[2] = {
-    'type': 'TestPool',
-    'parameters': {
-            'individual_quarantine_days': 2*7,  # quarantine for days if individual pos
-            #
-            'group_quarantine_days': 2,        # quarantine group for days if group pos
-            'poolsize': 5,                     # uniform poolsize
-            'k_group': 1,                      # k for group test
-            #
-            'days_if_positive': 7,             # if positive again, schedule next test in days
-            'k_release': 2,                    # k for release test
-        'days_after_negative': 2}          # days after negative test still in quarantine
+mytests[1] = {
+    'short': 'All individually',
+    'type': 'TestAll',
+    'parameters': {}
 }
-mytests[3] = {
+mytests[2] = {
+    'short': 'Contact trace',
     'type': 'TestContacts',
     'parameters': {
         'individual_quarantine_days': 2*7,
@@ -46,6 +41,20 @@ mytests[3] = {
         'k_release': 2,                     # 2 negative tests required before release
         'days_after_negative': 2}           # after tests are negative, wait another 2 days (check!)
 }
+mytests[3] = {
+    'short': 'Pooled (5)',
+    'type': 'TestPool',
+    'parameters': {
+            'individual_quarantine_days': 2*7,  # quarantine for days if individual pos
+            #
+            'group_quarantine_days': 2,        # quarantine group for days if group pos
+            'poolsize': 5,                     # uniform poolsize
+            'k_group': 1,                      # k for group test
+            #
+            'days_if_positive': 7,             # if positive again, schedule next test in days
+            'k_release': 2,                    # k for release test
+        'days_after_negative': 2}          # days after negative test still in quarantine
+}
 
 
 # main
@@ -62,15 +71,88 @@ if __name__ == "__main__":
         mytests[2],
         mytests[3]]
 
-    # how many samples per test
-    datapoints_per_comparison = 20
-
     # generate data for each test
+    perfs = []
     for tidx in range(len(to_compare)):
         usetest = to_compare[tidx]
         print(f"#{usetest}")
         print(f"{tidx}")
-        for p in range(datapoints_per_comparison):
-            perf = simple.get_performance(usetest=usetest)
-            print(f'{tidx},{perf[0]},{perf[1]},{perf[2]},{perf[3]}')
-        print("")
+        perfs += [ simple.get_performance(usetest=usetest) ]
+
+    # comparison plots
+    strategy_names = [s['short'] for s in to_compare]
+
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xlabel('test strategy')
+    ax.set_ylabel('# of persons')
+    ax.set_title('Deceased persons')
+    data = [ p['seq_death_nb'] for p in perfs ]
+    avgs = [np.average(d) for d in data]
+    stds = [np.std(d) for d in data]
+    x = list(range(len(avgs)))
+    ax.bar(x, avgs, yerr=stds, capsize=15)
+    ax.set_ybound(lower=0, upper=5)
+    plt.xticks(x, strategy_names)
+    plt.savefig('fig_Deceased_persons.pdf')
+
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xlabel('test strategy')
+    ax.set_ylabel('# tests per day')
+    ax.set_title('Average number of tests per day')
+    data = [ p['seq_testsperday'] for p in perfs ]
+    avgs = [np.average(d) for d in data]
+    stds = [np.std(d) for d in data]
+    x = list(range(len(avgs)))
+    ax.bar(x, avgs, yerr=stds, capsize=15)
+    ax.set_ybound(lower=0, upper=config.N)
+    plt.xticks(x, strategy_names)
+    plt.savefig('fig_Average_number_of_tests_per_day.pdf')
+
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xlabel('test strategy')
+    ax.set_ylabel('# tests')
+    ax.set_title('Maximum number of tests on a day')
+    data = [ p['seq_max_testsonday'] for p in perfs ]
+    avgs = [np.average(d) for d in data]
+    stds = [np.std(d) for d in data]
+    x = list(range(len(avgs)))
+    ax.bar(x, avgs, yerr=stds, capsize=15)
+    ax.set_ybound(lower=0, upper=config.N)
+    plt.xticks(x, strategy_names)
+    plt.savefig('fig_Maximum_number_of_tests_per_day.pdf')
+
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xlabel('test strategy')
+    ax.set_ylabel('# spreading days')
+    ax.set_title('Cummulative number of working spreading personnel')
+    data = [ p['seq_spreading_days'] for p in perfs ]
+    avgs = [np.average(d) for d in data]
+    stds = [np.std(d) for d in data]
+    x = list(range(len(avgs)))
+    ax.bar(x, avgs, yerr=stds, capsize=15)
+    ax.set_ybound(lower=0, upper=config.N*15)
+    plt.xticks(x, strategy_names)
+    plt.savefig('fig_Cummulative_number_of_working_spreading_personnel.pdf')
+
+    # working per day (averaged over all simulations)
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xlabel('test strategy')
+    ax.set_ylabel('# of persons')
+    ax.set_title('Daywise average working personnel')
+    data = [ p['seq_seq_avg_working'] for p in perfs ]
+    T = len(data[0])
+    x = range(T)
+    colors = 'rmbg'
+    for i, d in enumerate(data):
+        ax.plot(x, d, '-' + colors[i % len(colors)], label=strategy_names[i])
+    ax.set_ybound(lower=0, upper=config.N)
+    ax.legend(shadow=False, ncol=1, frameon=False)
+    plt.xticks(range(0,T,5), range(0,T,5))
+    plt.savefig('fig_Daywise_average_working_personnel.pdf')
+
+    plt.show()

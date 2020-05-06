@@ -88,7 +88,7 @@ mytests[3] = {
 }
 
 # chose among above or new ones
-usetest = mytests[3]
+usetest = mytests[1]
 
 # -------------------------------------------------------------------------------
 

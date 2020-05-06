@@ -6,60 +6,54 @@ import numpy as np
 from scipy import stats
 import pylab as pl
 import math
+from scipy.special import comb
 
+class EventQueue:
+    def __init__(self):
+        self.queue = []
 
-class State(Enum):
+    def enqueue(self, delay: int, event):
+        assert(delay >= 0)
+        self.queue += [(delay, event)]
+
+    def dequeue(self):
+        """
+        Decrements all timers and returns next day's event list.
+        """
+        today = filter(lambda x: x[0] <= 1, self.queue)
+        self.queue = filter(lambda x: x[0] > 1, self.queue)
+        self.queue = list(map(lambda x: [x[0]-1, x[1]], self.queue))
+        return [ x[1] for x in today ]
+
+    def clear(self):
+        self.queue = []
+
+class Symptoms(Enum):
     """
-    Agent infection states.
+    Agent's severity of symptoms.
 
-    UNINFECTED
-    INFECTED_NONSPREADING
-    INFECTED_SPREADING
-    IMMUNE
+    NONE
+    MILD
+    SEVERE
     DEAD 
     """
-    UNINFECTED = auto()
-    INFECTED_NONSPREADING = auto()
-    INFECTED_SPREADING = auto()
-    IMMUNE = auto()
+    NONE = auto()
+    MILD = auto()
+    SEVERE = auto()
     DEAD = auto()
 
-    def __str__(self):
-        if self is State.UNINFECTED:
-            return 'u'
-        elif self is State.INFECTED_NONSPREADING:
-            return 'i'
-        elif self is State.INFECTED_SPREADING:
-            return 's'
-        elif self is State.IMMUNE:
+    def __str__(self) -> str:
+        if self is Symptoms.NONE:
+            return 'n'
+        elif self is Symptoms.MILD:
             return 'm'
-        elif self is State.DEAD:
+        elif self is Symptoms.SEVERE:
+            return 's'
+        elif self is Symptoms.DEAD:
             return 'd'
         else:
             raise ValueError('Unknown State')
 
-
-class Symptoms(Enum):
-    """
-    Symptom severity an infected agent may have.
-
-    ASYMPTOMATIC
-    MILD
-    SEVERE
-    """
-    ASYMPTOMATIC = auto()
-    MILD = auto()
-    SEVERE = auto()
-
-    def __str__(self):
-        if self is Symptoms.ASYMPTOMATIC:
-            return ''
-        elif self is Symptoms.MILD:
-            return '~'
-        elif self is Symptoms.SEVERE:
-            return '!'
-        else:
-            raise ValueError('Unknown Symptom')
 
 
 # P( death | severe symptomatic )
@@ -69,8 +63,7 @@ class Symptoms(Enum):
 #   Table 1: \theta
 # model:
 #  mean of \theta
-pdeath = 0.14  # ?
-
+p_death = {Symptoms.MILD: 0.0, Symptoms.SEVERE: 0.14}
 
 # P( severe symptomatic | infected )
 # P(        symptomatic | infected ) = 0.5 from island study (update!)
@@ -81,7 +74,9 @@ pdeath = 0.14  # ?
 # but cannot be fixed within a very wide range
 # psyptomatic = 0.5 * (1 - 0.89)
 # -- for the moment try this:
-psyptomatic = 0.5 * (1 - 0.89)
+p_symptomatic = 0.5
+p_severe_syptomatic = p_symptomatic * (1 - 0.89)
+p_mild_symptomatic = p_symptomatic - p_severe_syptomatic
 
 
 # ---- latent period -----------
@@ -98,7 +93,6 @@ latentperiod_pk = (2*pmin, 4*pmin, 2*pmin, 1*pmin, 1*pmin, 1*pmin)
 latentperiod_xk = np.arange(len(latentperiod_pk))
 latentperiod_pdf = stats.rv_discrete(
     name='custm', values=(latentperiod_xk, latentperiod_pk))
-
 
 def i2s_days():
     return math.floor(latentperiod_pdf.rvs(size=1)[0])
@@ -121,9 +115,9 @@ shape = 5.807
 scale = 0.948
 latentperiod_dist = stats.gamma(a=shape, scale=scale)
 
-
-def i2symp_days():
+def symptoms_delay(symptoms):
     return math.floor(latentperiod_dist.rvs(size=1)[0])
+
 
 # ---- onset of viral spreading to virus negative -----------
 # = length of period where infectious [days]
@@ -136,25 +130,85 @@ def i2symp_days():
 #   https://www.thelancet.com/action/showPdf?pii=S1473-3099%2820%2930232-2
 #  observaation:
 #  days from onset of symptoms (?? check) (not infection) to virus negative
-#  - severe case: positive after 10 days (from Figure: ~20 days )
+#  - severe case: positive after 20 days (from Figure: ~20 days )
 #  - mild case: negative after <= 10 days (from Figure: ~10 days )
 # model:
 #  ! needs to be refined later on
 #  at the moment constant times
 
 
-def s2m_days(severe=True):
+def severity_days(symptoms):
     """
-    Returns number of days from symptomatic until ...
+    Returns number of days for an agent
+    with symptoms <symptoms>
 
     Arguments:
-    severe -- if severely ill (bool)
+    symptoms -- agent's symptoms (Symptoms)
     """
-    if severe:
+    if symptoms is Symptoms.MILD:
         d = 20
+    elif symptoms is Symptoms.SEVERE:
+        d = 20
+    elif symptoms is Symptoms.NONE:
+        d = 20 #FIXME: guess
     else:
-        d = 10
+        raise ValueError("invalid symptoms")
     return d
+
+
+# RNA levels.
+# based on rough shape in https://www.nature.com/articles/s41591-020-0869-5#Fig3
+# but needs to be adjusted to the data.
+# deterministic at the moment.
+def relative_rna_levels(days_until_symptomonset: int, symptoms: Symptoms) -> list:
+    #TODO: refine model
+    p = 0.1
+    # -2 days before potential onset: no RNA
+    rna_levels = [0 for d in range(1,days_until_symptomonset-2)]
+    # then:
+    for d in range(20):
+        r = comb(40,d) *  p**d * (1-p)**d / (comb(40,3) *  p**3 * (1-p)**3)
+        rna_levels += [r]
+    # finally:
+    rna_levels += [0]
+    return rna_levels
+
+
+
+def draw_course_of_disease():
+    # draw severity
+    u = random.random()
+    if u >= p_symptomatic:
+        symptoms = Symptoms.NONE
+    elif u >= p_mild_symptomatic:
+        symptoms = Symptoms.SEVERE
+    else:
+        symptoms = Symptoms.MILD
+
+    symptoms_onset = symptoms_delay(symptoms)
+    symptoms_duration = severity_days(symptoms)
+
+    symptoms_events = []
+
+    # incubation
+    if symptoms is not Symptoms.NONE:
+        
+        symptoms_events += [(symptoms_onset, symptoms)]
+
+        # dies?
+        u = random.random()
+        if u < p_death[symptoms]:
+            symptoms_events += [(symptoms_onset+symptoms_duration, Symptoms.DEAD)]
+        else:
+            symptoms_events += [(symptoms_onset+symptoms_duration, Symptoms.NONE)]
+
+    # RNA levels
+    rna_levels = relative_rna_levels(days_until_symptomonset= symptoms_onset, symptoms= symptoms)
+    rna_events = [(d+1,r) for d,r in enumerate(rna_levels)]
+
+    return symptoms_events, rna_events
+
+
 
 
 class Agent:
@@ -169,30 +223,42 @@ class Agent:
         """
         self.id = myid
 
-        self.state = State.UNINFECTED
-        self.state_timer = -float('inf')
-        self.next_state = State.UNINFECTED
-
-        self.quarantined = False
-        self.quarantine_timer = -float('inf')
-
-        self.time_infected = -float('inf')
+        self.infected = False
         self.infected_by = None
 
-        self.symptoms = None
-        self.symptoms_timer = -float('inf')
-        self.severe_symptomatic = False
-        self.severe_symptomatic_timer = -float('inf')
+        self.symptoms = Symptoms.NONE
+        self.symptoms_queue = EventQueue()
+
+        self.rna = 0
+        self.rna_queue = EventQueue()
+
+        self.quarantined = False
+        self.quarantine_queue = EventQueue()
 
         self.myinfex = myinfex
 
-    def __str__(self):
+    @property
+    def spreading(self):
+        return self.rna > 0
+
+    def __str__(self) -> str:
         mystr = str(self.symptoms)
         # FIXME: remove next line
-        mystr += '!' if self.severe_symptomatic else ''
         mystr += 'q' if self.quarantined else ''
-        mystr += str(self.state)
         return mystr
+
+    @property
+    def state(self):
+        return {'infected': self.infected,
+                'infected_by': self.infected_by,
+                'symptoms': self.symptoms,
+                'rna': self.rna,
+                'quarantined': self.quarantined,
+                'working': self.working,
+                'dead': self.dead,
+                'sick_leave': self.sick_leave,
+                'spreading': self.spreading,
+                }
 
     def infect(self, by_id, time):
         """
@@ -202,101 +268,74 @@ class Agent:
         by_id -- id of agent that infects this agent (int)
         time -- time of infection (int)
         """
-        if self.state is State.UNINFECTED:
-            self.state = State.INFECTED_NONSPREADING
-            self.state_timer = i2s_days()
-            self.next_state = State.INFECTED_SPREADING
-            self.time_infected = time
+        if not self.infected:
+            symptoms_events, rna_events = draw_course_of_disease()
+
+            for d,e in symptoms_events:
+                self.symptoms_queue.enqueue(d,e)
+            for d,e in rna_events:
+                self.rna_queue.enqueue(d,e)
+
+            self.infected = True
             self.infected_by = by_id
+            self.time_infected = time
 
-            # choose if will be severe symptomatic and if so when
-            u = random.random()
-            if u <= psyptomatic:
-                self.severe_symptomatic_timer = i2symp_days()
-
-    def quarantine(self, days):
+    def quarantine(self, days: int):
         """
         Quarantines agent for days from now.
 
         Arguments:
         days -- number of days to quarantine from now (int)
         """
+        assert(days >= 0)
         self.quarantined = True
-        self.quarantine_timer = days
-        # print(f'quarantine {self.id}')
+        self.quarantine_queue.clear()
+        self.quarantine_queue.enqueue(days, False)
 
     def dequarantine(self):
         """
         Dequarantines agent.
         """
         self.quarantined = False
-        self.quarantine_timer = -float('inf')
-        # print(f'dequarantine {self.id}')
+        self.quarantine_queue.clear()
 
-    def works(self):
+    @property
+    def working(self):
         """
-        Returns if agent works.
+        If agent works.
         """
-        # if works in hospital
-        if self.state is State.DEAD or self.quarantined:
-            return False
-        elif self.severe_symptomatic:
-            return False
-        else:
-            return True
+        return self.symptoms is Symptoms.NONE and not self.quarantined 
 
-    def tick(self, t):
+    @property
+    def dead(self):
+        """
+        If agent is dead.
+        """
+        return self.symptoms is Symptoms.DEAD
+
+    @property
+    def sick_leave(self):
+        """
+        If agent is alive, but too sick to work.
+        """
+        return self.symptoms in {Symptoms.MILD, Symptoms.SEVERE}
+
+    def tick(self):
         """
         Performs a one day state change of the agent.
-
-        Arguments:
-        t -- current time (int)
         """
-        self.state_timer -= 1
 
-        if self.state is State.INFECTED_NONSPREADING:
-            if self.state_timer == 0:
-                self.state = self.next_state
-                if self.severe_symptomatic_timer > -float('inf'):
-                    # this agent will be severe symptomatic
-                    # time until (severe) symptoms
-                    self.severe_symptomatic_timer = i2symp_days()
-                    # print(self.severe_symptomatic_timer)
-                    # check if will die
-                    u = random.random()
-                    if u <= pdeath:
-                        # will die
-                        self.next_state = State.DEAD
-                        # ! check this later -> here assumed that death distributed
-                        #   like virus negative
-                        self.state_timer = s2m_days(severe=True)
-                    else:
-                        # will not die, but severe symptoms
-                        self.next_state = State.IMMUNE
-                        self.state_timer = s2m_days(severe=True)
-                else:
-                    # will not die, and only mild symptoms (if any)
-                    self.next_state = State.IMMUNE
-                    self.state_timer = s2m_days(severe=False)
-        elif self.state is State.INFECTED_SPREADING:
-            if self.state_timer == 0:
-                self.state = self.next_state
+        symptoms_events = self.symptoms_queue.dequeue()
+        assert(len(symptoms_events) <= 1)
+        for e in symptoms_events:
+            self.symptoms = e
 
-        self.quarantine_timer -= 1
-        if self.quarantined and self.quarantine_timer == 0:
-            self.dequarantine()
+        rna_events = self.rna_queue.dequeue()
+        assert(len(rna_events) <= 1)
+        for e in rna_events:
+            self.rna = e
 
-        if self.severe_symptomatic:
-            # TODO: implement me better
-            # assumption currently:
-            # State.IMMUNE -> self.severe_symptomatic = False
-            if self.state is State.IMMUNE:
-                self.severe_symptomatic = False
-                self.myinfex.remove_symptomatic(t, self.id)
-        else:
-            # not yet severe symptoms
-            self.severe_symptomatic_timer -= 1
-            if self.severe_symptomatic_timer == 0:
-                self.severe_symptomatic = True
-                # print(f'{self.id} got sympt')
-                self.myinfex.add_symptomatic(t, self.id)
+        quarantine_events = self.quarantine_queue.dequeue()
+        assert(len(quarantine_events) <= 1)
+        for e in quarantine_events:
+            self.quarantined = e

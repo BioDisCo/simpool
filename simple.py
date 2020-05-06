@@ -7,7 +7,7 @@ import config
 
 from Infections.InfectionExecution import InfectionExecution
 from Infections.Agent import Agent
-from Infections.Agent import State
+from Infections.Agent import Symptoms
 from Infections.Test import get_Test
 from Infections.Test import PoolableProbing
 from Infections.Test import TestAll, TestJustLook, TestPool, TestContacts
@@ -19,8 +19,8 @@ def run_sim(usetest, return_state_vec=False):
     run a single simulation
     """
     # sim
-    infex = InfectionExecution(N=config.N)
-    state = [Agent(i, infex) for i in range(config.N)]
+    infex = InfectionExecution()
+    #state = [Agent(i, infex) for i in range(config.N)]
     u = []
     i = []
     s = []
@@ -38,37 +38,26 @@ def run_sim(usetest, return_state_vec=False):
     test = get_Test(probing=probing, infex=infex, usetest=usetest)
 
     for t in range(config.T):
-        # print(f'time: {t}')
-        # print(f'{t}: {state}')
-
         # log per class
-        classes_working = [s.state for s in state if s.works()]
-        classes_all = [s.state for s in state]
-        quarantined = [s.quarantined for s in state]
-        u += [classes_working.count(State.UNINFECTED)]
-        i += [classes_working.count(State.INFECTED_NONSPREADING)]
-        s += [classes_working.count(State.INFECTED_SPREADING)]
-        m += [classes_working.count(State.IMMUNE)]
-        q += [quarantined.count(True)]
-        d += [classes_all.count(State.DEAD)]
-        is_working = [s.works() for s in state]
-        working += [is_working.count(True)]
+        u += [config.N - infex.get_nb_infected(t)]
+        i += [infex.get_nb_working(t) - infex.get_nb_working_spreading(t)]
+        s += [infex.get_nb_working_spreading(t)]
+        m += [infex.get_nb_working_immune(t)]
+        q += [infex.get_nb_quarantined(t)]
+        d += [infex.get_nb_dead(t)]
+        working += [infex.get_nb_working(t)]
 
         # conditinally return state vector
         if return_state_vec:
-            state_vec += [classes_all]
+            #state_vec += [classes_all]
+            pass #TODO: decide the format
 
-        # -- to print traces --
-        # print(list(map(str, state)))
-
-        # transition
-        for person in config.person_ids:
-            infex.next_state(t, person, state)
-
+        # schedule
+        infex.tick()
         # test
-        test.do_test(state, t)
+        test.do_test(t)
 
-    return u, i, s, m, q, d, working, infex, test, state_vec
+    return u, i, s, m, q, d, working, infex, test, state_vec, infex
 
 
 def get_performance(usetest):
@@ -107,9 +96,11 @@ def get_performance(usetest):
     overall_uninfected_frac = []
     overall_tests_perday_avg = []
     overall_tests_perday_max = []
+    overall_spreading_days_sum = []
+    seq_seq_working = []
 
     for k in range(config.Nsim):
-        u, i, s, m, q, d, working, infex, test, state_vec = run_sim(usetest)
+        u, i, s, m, q, d, working, infex, test, state_vec, _ = run_sim(usetest)
         if config.plotting:
             if k > 0:
                 alpha = 0.02
@@ -147,6 +138,8 @@ def get_performance(usetest):
         overall_uninfected_frac += [uninfected_frac]
         overall_tests_perday_avg += [np.average(tests_eachday)]
         overall_tests_perday_max += [max(tests_eachday)]
+        overall_spreading_days_sum += [sum(s)]
+        seq_seq_working += [working] 
         # print
         if config.output_singleruns:
             print('')
@@ -201,11 +194,19 @@ def get_performance(usetest):
 
         plt.show()
 
-    # return tuple (avg died[pers], avg minwork[pers], avg tests/day, avg maximal tests/day )
-    return (np.average(overall_death_frac)*config.N,
-            np.average(overall_minwork_frac)*config.N,
-            np.average(overall_tests_perday_avg),
-            np.average(overall_tests_perday_max))
+    # return performance
+    return {
+        'avg_death_nb': np.average(overall_death_frac)*config.N,
+        'seq_death_nb': [x * config.N for x in overall_death_frac],
+        'avg_minwork_nb': np.average(overall_minwork_frac)*config.N,
+        'seq_minwork_nb': [x * config.N for x in overall_minwork_frac],
+        'avg_testsperday': np.average(overall_tests_perday_avg),
+        'seq_testsperday': overall_tests_perday_avg,
+        'avg_max_testsonday': np.average(overall_tests_perday_max),
+        'seq_max_testsonday': overall_tests_perday_max,
+        'seq_spreading_days': overall_spreading_days_sum,
+        'seq_seq_avg_working': np.average(seq_seq_working, axis=0), # point-wise average
+    }
 
 
 # main
