@@ -288,9 +288,13 @@ class Agent:
         days -- number of days to quarantine from now (int)
         """
         assert(days >= 0)
-        self.quarantined = True
-        self.quarantine_queue.clear()
-        self.quarantine_queue.enqueue(days, False)
+        if days > 0:
+            self.quarantined = True
+            self.quarantine_queue.clear()
+            self.quarantine_queue.enqueue(days, False)
+        else:
+            # do not quarantine
+            pass
 
     def dequarantine(self):
         """

@@ -42,18 +42,18 @@ mytests[2] = {
         'days_after_negative': 2}           # after tests are negative, wait another 2 days (check!)
 }
 mytests[3] = {
-    'short': 'Pooled (5)',
+    'short': 'Pooled (10)',
     'type': 'TestPool',
     'parameters': {
             'individual_quarantine_days': 2*7,  # quarantine for days if individual pos
             #
-            'group_quarantine_days': 2,        # quarantine group for days if group pos
-            'poolsize': 5,                     # uniform poolsize
+            'group_quarantine_days': 0,        # quarantine group for days if group pos
+            'poolsize': 10,                     # uniform poolsize
             'k_group': 1,                      # k for group test
             #
             'days_if_positive': 7,             # if positive again, schedule next test in days
-            'k_release': 2,                    # k for release test
-        'days_after_negative': 2}          # days after negative test still in quarantine
+            'k_release': 1,                    # k for release test
+        'days_after_negative': 0}          # days after negative test still in quarantine
 }
 
 
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     ax = plt.subplot(111)
     ax.set_xlabel('test strategy')
     ax.set_ylabel('# spreading days')
-    ax.set_title('Cummulative number of working spreading personnel')
+    ax.set_title('Cumulative number of working spreading personnel')
     data = [ p['seq_spreading_days'] for p in perfs ]
     avgs = [np.average(d) for d in data]
     stds = [np.std(d) for d in data]
@@ -136,12 +136,12 @@ if __name__ == "__main__":
     ax.bar(x, avgs, yerr=stds, capsize=15)
     ax.set_ybound(lower=0, upper=config.N*15)
     plt.xticks(x, strategy_names)
-    plt.savefig('fig_Cummulative_number_of_working_spreading_personnel.pdf')
+    plt.savefig('fig_Cumulative_number_of_working_spreading_personnel.pdf')
 
     # working per day (averaged over all simulations)
     plt.figure()
     ax = plt.subplot(111)
-    ax.set_xlabel('test strategy')
+    ax.set_xlabel('day')
     ax.set_ylabel('# of persons')
     ax.set_title('Daywise average working personnel')
     data = [ p['seq_seq_avg_working'] for p in perfs ]

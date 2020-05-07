@@ -44,18 +44,18 @@ mytests[2] = {
         'days_after_negative': 2}           # after tests are negative, wait another 2 days (check!)
 }
 mytests[3] = {
-    'short': 'Pooled (5)',
+    'short': 'Pooled (10)',
     'type': 'TestPool',
     'parameters': {
             'individual_quarantine_days': 2*7,  # quarantine for days if individual pos
             #
-            'group_quarantine_days': 2,        # quarantine group for days if group pos
-            'poolsize': 5,                     # uniform poolsize
+            'group_quarantine_days': 0,        # quarantine group for days if group pos
+            'poolsize': 10,                     # uniform poolsize
             'k_group': 1,                      # k for group test
             #
             'days_if_positive': 7,             # if positive again, schedule next test in days
-            'k_release': 2,                    # k for release test
-        'days_after_negative': 2}          # days after negative test still in quarantine
+            'k_release': 1,                    # k for release test
+        'days_after_negative': 0}          # days after negative test still in quarantine
 }
 
 
