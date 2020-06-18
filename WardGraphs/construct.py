@@ -4,7 +4,9 @@ import matplotlib
 import csv
 import collections
 
-col = {'MED': 1, 'ADM': 20, 'NUR': 40, 'PAT': 60}
+#col = {'MED': 1, 'ADM': 20, 'NUR': 40, 'PAT': 60}
+col = {'MN': 1, 'AP': 60}
+in_group = {'MED': 'MN', 'ADM': 'AP', 'NUR': 'MN', 'PAT': 'AP'}
 cmap = matplotlib.cm.get_cmap('Spectral')
 CONTACT_THRESHOLD = 15*60/20  # 15min in terms of 20s
 MAX_DEGREE = 50 # check
@@ -52,8 +54,8 @@ with open('detailed_list_of_contacts_Hospital.dat', newline='') as csvfile:
         agent2_type = row[4]
 
         # log types
-        agents[agent1] = agent1_type
-        agents[agent2] = agent2_type
+        agents[agent1] = in_group[agent1_type]
+        agents[agent2] = in_group[agent2_type]
         interactions += [ {'t': time_sec, 'a1': agent1, 'a2': agent2} ]
 
 # one graph per day
