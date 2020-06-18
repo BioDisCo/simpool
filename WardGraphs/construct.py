@@ -1,33 +1,47 @@
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib
 import csv
 import collections
 
 col = {'MED': 1, 'ADM': 20, 'NUR': 40, 'PAT': 60}
+cmap = matplotlib.cm.get_cmap('Spectral')
 CONTACT_THRESHOLD = 15*60/20  # 15min in terms of 20s
+MAX_DEGREE = 50 # check
+
+agents = dict()
+interactions = []
 
 def plot_degree_hist(G):
-    degree_sequence = sorted([d for n, d in G.degree()], reverse=True)  # degree sequence
-    degreeCount = collections.Counter(degree_sequence)
-    deg, cnt = zip(*degreeCount.items())
-
     fig, ax = plt.subplots()
-    plt.bar(deg, cnt, width=0.80, color='b')
 
+    node_degree_sequence = [(n,d) for n, d in G.degree()]
+    x = range(MAX_DEGREE+1)
+    y_old = [0 for i in x]
+    for t in col.keys():
+        # go over all types t
+        # degree sequence for this type
+        degree_sequence = sorted([nd[1] for nd in node_degree_sequence if agents[nd[0]] == t], reverse=True)
+        degreeCount = collections.Counter(degree_sequence)
+        y = [0 for i in x]
+        for d,mycount in degreeCount.items():
+            y[d] = mycount
+        plt.bar(x, y, width=0.80, bottom=y_old, color=cmap(col[t]), label=t)
+        y_old = [ y_old[i]+y[i] for i in range(len(y_old)) ]
+
+    plt.legend()
     plt.title("Degree Histogram")
     plt.ylabel("Count")
     plt.xlabel("Degree")
-    ax.set_xticks([d + 0.4 for d in deg])
-    ax.set_xticklabels(deg)
+    ax.set_xticks([d + 0.4 for d in x])
+    ax.set_xticklabels(x)
 
 def plot_graph(G):
     plt.figure()
     node_color = [ col[agents[a]] for a in agents.keys() ]
-    nx.draw_networkx(G, with_labels=True, node_size=200, node_color=node_color, cmap=plt.cm.Blues)
+    nx.draw_networkx(G, with_labels=True, node_size=200, node_color=node_color, cmap=cmap)
     plot_degree_hist(G)
 
-agents = dict()
-interactions = []
 with open('detailed_list_of_contacts_Hospital.dat', newline='') as csvfile:
     reader = csv.reader(csvfile, delimiter='\t', quotechar='#')
     for row in reader:
