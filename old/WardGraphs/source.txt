@@ -1,4 +1,0 @@
-detailed_list_of_contacts_Hospital.dat is from
-http://www.sociopatterns.org/datasets/hospital-ward-dynamic-contact-network/
-
-P. Vanhems et al., Estimating Potential Infection Transmission Routes in Hospital Wards Using Wearable Proximity Sensors, PLoS ONE 8(9): e73970 (2013).
