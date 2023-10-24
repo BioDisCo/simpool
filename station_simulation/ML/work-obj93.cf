@@ -1,4 +1,0 @@
-v 4
-file . "huhu.vhdl" "f525921d7a543fc7fb84262222e47f5780eccfd8" "20201121174326.265":
-  entity moore at 1( 0) + 0 on 13;
-  architecture rtl of moore at 13( 198) + 0 on 14;
